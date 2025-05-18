@@ -1,12 +1,31 @@
 services:
   
-  api:
+  db-migrate:
     build:
       context: .
       dockerfile: Dockerfile
     depends_on:
       mysql_db:
-        condition: service_started
+        condition: service_healthy
+    networks:
+      - internal
+    command: [ "node", "./.dist/migrate.js" ]
+    environment:
+      - DB_HOST=mysql_db
+      - DB_PWD=${DB_PWD}
+      - DB_USER=root
+      - DB_NAME=rpc_uptime_data
+      - NODE_ENV=production
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      mysql_db:
+        condition: service_healthy
       redis:
         condition: service_started
     networks:
@@ -48,6 +67,11 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     command: ["--default-authentication-plugin=mysql_native_password", "--innodb-buffer-pool-size=8G", "--innodb-buffer-pool-instances=16", "--max_allowed_packet=1073741824"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PWD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis/redis-stack-server:latest
@@ -65,7 +89,10 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      - mysql_db
+      db-migrate:
+        condition: service_completed_successfully
+      mysql_db:
+        condition: service_healthy
     networks:
       - internal
     deploy:
@@ -93,7 +120,10 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      - mysql_db
+      db-migrate:
+        condition: service_completed_successfully
+      mysql_db:
+        condition: service_healthy
     networks:
       - internal
     deploy:

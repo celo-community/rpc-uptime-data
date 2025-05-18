@@ -8,7 +8,10 @@ import { v4 as uuidv4 } from "uuid";
 import { ContractKit, newKit } from "@celo/contractkit";
 import { Transaction } from "sequelize";
 import { IRPCInfo, IElectedValidator, IValidatorGroup } from "./types";
-import { getBlockNumberFromRPCEndpoint } from "./rpc";
+import {
+	getBlockNumberFromRPCEndpoint,
+	getIsSyncingFromRPCEndpoint,
+} from "./rpc";
 import { promisify } from "util";
 import { exec } from "child_process";
 import { updateValidatorNames, updateValidatorGroups } from "./validator";
@@ -124,7 +127,7 @@ async function checkRPCEndpoint(
 	rpcUrl: string,
 	measurement: dbService.RPCMeasurement
 ): Promise<{ up: boolean; blockNumber?: number }> {
-	const t0 = performance.now();
+	let t0 = performance.now();
 	try {
 		utils.log(`checking rpc ${rpcUrl}...`);
 		const response = await getBlockNumberFromRPCEndpoint(rpcUrl);
@@ -135,9 +138,19 @@ async function checkRPCEndpoint(
 			measurement.responseTimeMs = response.responseTime;
 		}
 	} catch (error) {
-		utils.log(`Error checking RPC ${rpcUrl}: ${error}`);
+		utils.log(`Error checking block number ${rpcUrl}: ${error}`);
 	}
-	utils.logTimeElapsed(t0, `checked rpc${rpcUrl}`);
+	utils.logTimeElapsed(t0, `checked block number ${rpcUrl}`);
+
+	t0 = performance.now();
+	measurement.isSyncing = null;
+	try {
+		const response = await getIsSyncingFromRPCEndpoint(rpcUrl);
+		measurement.isSyncing = response?.isSyncing;
+	} catch (error) {
+		utils.log(`Error checking is syncing ${rpcUrl}: ${error}`);
+	}
+	utils.logTimeElapsed(t0, `checked is syncing ${rpcUrl}`);
 	return measurement;
 }
 
