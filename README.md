@@ -116,4 +116,74 @@ Key environment variables:
 
 This service is part of the Celo blockchain monitoring infrastructure and serves the [Vido](https://github.com/celo-org/vido) front-end and will be duplicated by Score Management committee members to have multiple sources of truth for RPC endpoint uptime and performance metrics.
 
+## Database Initialization
+
+This project automatically initializes the database and runs migrations when the Docker stack starts. The process happens in two steps:
+
+1. **db-init**: Creates the database connection and initializes Sequelize models
+2. **db-migrations**: Runs all pending database migrations
+
+### Automatic Startup
+
+When you run `docker-compose up`, the following sequence happens automatically:
+
+1. MySQL starts and becomes healthy
+2. **db-init** runs and creates database models (tables)
+3. **db-migrations** runs and applies all pending migrations
+4. All other services (api, indexers) start after migrations complete
+
+### Manual Database Operations
+
+If you need to run database operations manually:
+
+```bash
+# Run only database initialization (creates models)
+docker-compose up db-init
+
+# Run only migrations
+docker-compose up db-migrations
+
+# Run both database operations
+docker-compose up db-init db-migrations
+
+# Run migrations locally (development)
+yarn db:migrate
+
+# Run migrations in Docker
+yarn db:migrate:docker
+```
+
+### What Each Container Does:
+
+#### db-init Container:
+- Connects to MySQL (waits for it to be healthy)
+- Initializes database connection using `dbService.initialize()`
+- Creates Sequelize models (tables) using `dbService.syncToDatabase(false)`
+- Exits after successful completion
+
+#### db-migrations Container:
+- Runs after db-init completes successfully
+- Executes all pending Umzug migrations using `yarn db:migrate:docker`
+- Applies schema changes (like adding the `isSyncing` column)
+- Exits after successful completion
+
+### Prerequisites
+
+- MySQL container must be running and healthy
+- Environment variables must be properly configured (especially `DB_PWD`)
+- Docker and docker-compose must be installed
+
+### Troubleshooting
+
+If database operations fail:
+
+1. Check that MySQL is running: `docker-compose ps mysql_db`
+2. Verify environment variables are set correctly
+3. Check the container logs:
+   ```bash
+   docker-compose logs db-init
+   docker-compose logs db-migrations
+   ```
+4. Ensure the database credentials are correct
+
 

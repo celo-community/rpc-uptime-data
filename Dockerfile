@@ -1,4 +1,4 @@
-FROM node:20 AS builder
+FROM node:22 AS builder
 
 WORKDIR /app
 RUN apt-get update && apt-get install -y \
@@ -18,7 +18,7 @@ COPY . .
 
 RUN yarn build
 
-FROM node:20 AS runtime
+FROM node:22 AS runtime
 
 WORKDIR /app
 COPY --from=builder /app/package*.json ./

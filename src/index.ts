@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import express, { Express, NextFunction, Request, Response } from "express";
 import { validationResult, param, query } from "express-validator";
 import { IHealthResponse, getHealth } from "./api/health/health";
@@ -57,7 +58,7 @@ const app: Express = express();
 
 // Async error handler
 //
-// eslint-disable-next-line no-unused-vars
+
 const asyncHandler =
 	(fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) =>
 	(req: Request, res: Response, next: NextFunction) => {

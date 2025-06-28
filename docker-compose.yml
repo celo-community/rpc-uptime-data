@@ -1,31 +1,50 @@
 services:
   
-  db-migrate:
+  db-init:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.db-init
     depends_on:
       mysql_db:
         condition: service_healthy
     networks:
       - internal
-    command: [ "node", "./.dist/migrate.js" ]
     environment:
-      - DB_HOST=mysql_db
-      - DB_PWD=${DB_PWD}
-      - DB_USER=root
-      - DB_NAME=rpc_uptime_data
       - NODE_ENV=production
+      - QUERY_LOGGING=true
+      - DEBUG=true
+      - DB_HOST=mysql_db
+      - DB_NAME=rpc_uptime_data
+      - DB_USER=root
+      - DB_PWD=${DB_PWD}
+    restart: "no"
+
+  db-migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile.db-migrations
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    environment:
+      - NODE_ENV=production
+      - QUERY_LOGGING=true
+      - DEBUG=true
+      - DB_HOST=mysql_db
+      - DB_NAME=rpc_uptime_data
+      - DB_USER=root
+      - DB_PWD=${DB_PWD}
+    restart: "no"
 
   api:
     build:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      db-migrate:
+      db-migrations:
         condition: service_completed_successfully
-      mysql_db:
-        condition: service_healthy
       redis:
         condition: service_started
     networks:
@@ -68,10 +87,9 @@ services:
       - mysql_data:/var/lib/mysql
     command: ["--default-authentication-plugin=mysql_native_password", "--innodb-buffer-pool-size=8G", "--innodb-buffer-pool-instances=16", "--max_allowed_packet=1073741824"]
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PWD}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
 
   redis:
     image: redis/redis-stack-server:latest
@@ -89,7 +107,7 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      db-migrate:
+      db-migrations:
         condition: service_completed_successfully
       mysql_db:
         condition: service_healthy
@@ -120,7 +138,7 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      db-migrate:
+      db-migrations:
         condition: service_completed_successfully
       mysql_db:
         condition: service_healthy

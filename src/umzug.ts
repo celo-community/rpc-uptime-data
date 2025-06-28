@@ -1,20 +1,23 @@
 import { config } from "dotenv-flow";
 config();
-import { Umzug, SequelizeStorage } from "umzug";
+import { Umzug } from "umzug/lib/umzug";
+import { SequelizeStorage } from "umzug/lib/storage/sequelize";
 import { Sequelize } from "sequelize";
 import { initialize, initializeMemory } from "./service/database";
 
-let sequelize: Sequelize = initializeMemory();
+let sequelize: Sequelize;
 
 if (process.env.NODE_ENV === "production") {
 	sequelize = initialize();
+} else {
+	sequelize = initializeMemory();
 }
 
 process.env.QUERY_LOGGING = "true";
 
 export const migrator = new Umzug({
 	migrations: {
-		glob: ["db/migrations/*.ts", { cwd: __dirname }],
+		glob: ["db/migrations/*.js", { cwd: __dirname }],
 	},
 	context: sequelize,
 	storage: new SequelizeStorage({
