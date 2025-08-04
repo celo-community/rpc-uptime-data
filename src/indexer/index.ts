@@ -12,8 +12,6 @@ import {
 	getBlockNumberFromRPCEndpoint,
 	getIsSyncingFromRPCEndpoint,
 } from "./rpc";
-import { promisify } from "util";
-import { exec } from "child_process";
 import { updateValidatorNames, updateValidatorGroups } from "./validator";
 
 const NODE_URL = process.env.NODE_URL;
@@ -23,8 +21,6 @@ const RPC_TIMER_MS = parseInt(process.env.RPC_TIMER_MS || "300000");
 let sequelize: Sequelize;
 let kit: ContractKit;
 
-const execAsync = promisify(exec);
-
 async function getCurrentElectedValidators(
 	nodeURL = NODE_URL
 ): Promise<IElectedValidator[]> {
@@ -32,8 +28,14 @@ async function getCurrentElectedValidators(
 		utils.log(
 			`getting current elected validators: ${new Date()} from ${nodeURL}`
 		);
-		const { stdout } = await execAsync(
-			`NO_SYNCCHECK=1 npx celocli election:current --output json --node ${nodeURL}`
+		const { stdout } = await utils.execAsyncWithRetry(
+			`NO_SYNCCHECK=1 npx celocli election:current --output json --node ${nodeURL}`,
+			{
+				timeout: 60000, // 60 seconds for this command
+				maxRetries: 3,
+				baseDelay: 2000, // 2 seconds base delay
+				maxDelay: 30000, // 30 seconds max delay
+			}
 		);
 		//utils.log(`Raw stdout: ${stdout}`);
 
@@ -64,8 +66,14 @@ async function getCurrentElectedValidators(
 async function getRPCList(nodeURL = NODE_URL): Promise<IRPCInfo[]> {
 	try {
 		utils.log(`getting RPC list: ${new Date()} from ${nodeURL}`);
-		const { stdout } = await execAsync(
-			`NO_SYNCCHECK=1 npx celocli validatorgroup:rpc-urls --output json --node ${nodeURL}`
+		const { stdout } = await utils.execAsyncWithRetry(
+			`NO_SYNCCHECK=1 npx celocli validatorgroup:rpc-urls --output json --node ${nodeURL}`,
+			{
+				timeout: 60000, // 60 seconds for this command
+				maxRetries: 3,
+				baseDelay: 2000, // 2 seconds base delay
+				maxDelay: 30000, // 30 seconds max delay
+			}
 		);
 		//utils.log(`Raw stdout: ${stdout}`);
 
@@ -96,8 +104,14 @@ async function getValidatorGroups(
 ): Promise<IValidatorGroup[]> {
 	try {
 		utils.log(`getting validator groups: ${new Date()} from ${nodeURL}`);
-		const { stdout } = await execAsync(
-			`NO_SYNCCHECK=1 npx celocli validatorgroup:list --output json --node ${nodeURL}`
+		const { stdout } = await utils.execAsyncWithRetry(
+			`NO_SYNCCHECK=1 npx celocli validatorgroup:list --output json --node ${nodeURL}`,
+			{
+				timeout: 60000, // 60 seconds for this command
+				maxRetries: 3,
+				baseDelay: 2000, // 2 seconds base delay
+				maxDelay: 30000, // 30 seconds max delay
+			}
 		);
 		//utils.log(`Raw stdout: ${stdout}`);
 
