@@ -53,7 +53,7 @@ this_week_measurements AS (
         v.id AS validatorId,
         this_week_total_measurements.actualMeasurementsInPeriod,        
         this_week_total_measurements.slotsInPeriod,
-        this_week_total_measurements.actualMeasurementsInPeriod / this_week_total_measurements.slotsInPeriod * 100 AS missingMeasurementsPercentage,
+        ((this_week_total_measurements.actualMeasurementsInPeriod / this_week_total_measurements.slotsInPeriod) * 100) AS percentageOfPeriodMeasured,
         COUNT(measurement.id) AS electedCount,
         this_week_total_measurements.actualMeasurementsInPeriod - COUNT(measurement.id) AS notElectedCount,
         ((this_week_total_measurements.actualMeasurementsInPeriod - COUNT(measurement.id)) / this_week_total_measurements.actualMeasurementsInPeriod) * 100 AS notElectedPercentagePeriod,
@@ -80,7 +80,7 @@ last_week_measurements AS (
         v.id AS validatorId,
         last_week_total_measurements.actualMeasurementsInPeriod,        
         last_week_total_measurements.slotsInPeriod,
-        last_week_total_measurements.actualMeasurementsInPeriod / last_week_total_measurements.slotsInPeriod * 100 AS missingMeasurementsPercentage,
+        ((last_week_total_measurements.actualMeasurementsInPeriod / last_week_total_measurements.slotsInPeriod) * 100) AS percentageOfPeriodMeasured,
         COUNT(measurement.id) AS electedCount,
         last_week_total_measurements.actualMeasurementsInPeriod - COUNT(measurement.id) AS notElectedCount,
         ((last_week_total_measurements.actualMeasurementsInPeriod - COUNT(measurement.id)) / last_week_total_measurements.actualMeasurementsInPeriod) * 100 AS notElectedPercentagePeriod,
@@ -113,8 +113,9 @@ this_week_formatted_results AS (
         DATE_FORMAT(CONVERT_TZ(this_weeks_date_range.dateFrom, '+00:00', '+00:00'), '%Y-%m-%dT%H:%i:%sZ') AS dateFrom,
         DATE_FORMAT(CONVERT_TZ(this_weeks_date_range.dateTo, '+00:00', '+00:00'), '%Y-%m-%dT%H:%i:%sZ') AS dateTo,
         this_week_measurements.actualMeasurementsInPeriod,
+        this_week_measurements.slotsInPeriod,
+        this_week_measurements.percentageOfPeriodMeasured,
         this_week_measurements.electedCount,
-        this_week_measurements.missingMeasurementsPercentage,
         this_week_measurements.notElectedCount,
         this_week_measurements.notElectedPercentagePeriod,
         this_week_measurements.measuredDownMeasurementCount,
@@ -150,8 +151,9 @@ last_week_formatted_results AS (
         DATE_FORMAT(CONVERT_TZ(last_weeks_date_range.dateFrom, '+00:00', '+00:00'), '%Y-%m-%dT%H:%i:%sZ') AS dateFrom,
         DATE_FORMAT(CONVERT_TZ(last_weeks_date_range.dateTo, '+00:00', '+00:00'), '%Y-%m-%dT%H:%i:%sZ') AS dateTo,
         last_week_measurements.actualMeasurementsInPeriod,
+        last_week_measurements.slotsInPeriod,
+        last_week_measurements.percentageOfPeriodMeasured,
         last_week_measurements.electedCount,
-        last_week_measurements.missingMeasurementsPercentage,
         last_week_measurements.notElectedCount,
         last_week_measurements.notElectedPercentagePeriod,
         last_week_measurements.measuredDownMeasurementCount,
@@ -184,8 +186,9 @@ score_change AS (
         currentWeek.dateFrom,
         currentWeek.dateTo,
         currentWeek.actualMeasurementsInPeriod,
+        currentWeek.slotsInPeriod,
+        currentWeek.percentageOfPeriodMeasured,
         currentWeek.electedCount,
-        currentWeek.missingMeasurementsPercentage,
         currentWeek.notElectedCount,
         currentWeek.notElectedPercentagePeriod,
         currentWeek.measuredDownMeasurementCount,
@@ -211,8 +214,9 @@ score_change AS (
         currentWeek.dateFrom,
         currentWeek.dateTo,
         currentWeek.actualMeasurementsInPeriod,
+        currentWeek.slotsInPeriod,
+        currentWeek.percentageOfPeriodMeasured,
         currentWeek.electedCount,
-        currentWeek.missingMeasurementsPercentage,
         currentWeek.notElectedCount,
         currentWeek.notElectedPercentagePeriod,
         currentWeek.measuredDownMeasurementCount,
@@ -233,7 +237,6 @@ score_change AS (
     ORDER BY validatorName
 )
 SELECT address, validatorName, rpcUrl, measuredHighBlockLagPercentageInTotalPeriod as downPercentage, COALESCE(lastWeekScore, 'NOT ELECTED') as lastWeekScore, COALESCE(score, 'NOT ELECTED') as currentWeekScore, scoreChange 
-FROM score_change
-WHERE scoreChange != "NO CHANGE"
+FROM score_change WHERE scoreChange != "NO CHANGE"
 -- SELECT * FROM score_change
 ;
