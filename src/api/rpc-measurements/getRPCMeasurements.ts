@@ -77,6 +77,7 @@ export async function getRPCMeasurements(
 					blockNumber: g.blockNumber,
 					responseTimeMs: g.responseTimeMs,
 					statusCode: g.statusCode,
+					isSyncing: g.isSyncing,
 				})),
 		});
 	}

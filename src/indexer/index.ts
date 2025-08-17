@@ -8,9 +8,10 @@ import { v4 as uuidv4 } from "uuid";
 import { ContractKit, newKit } from "@celo/contractkit";
 import { Transaction } from "sequelize";
 import { IRPCInfo, IElectedValidator, IValidatorGroup } from "./types";
-import { getBlockNumberFromRPCEndpoint } from "./rpc";
-import { promisify } from "util";
-import { exec } from "child_process";
+import {
+	getBlockNumberFromRPCEndpoint,
+	getIsSyncingFromRPCEndpoint,
+} from "./rpc";
 import { updateValidatorNames, updateValidatorGroups } from "./validator";
 
 const NODE_URL = process.env.NODE_URL;
@@ -20,8 +21,6 @@ const RPC_TIMER_MS = parseInt(process.env.RPC_TIMER_MS || "300000");
 let sequelize: Sequelize;
 let kit: ContractKit;
 
-const execAsync = promisify(exec);
-
 async function getCurrentElectedValidators(
 	nodeURL = NODE_URL
 ): Promise<IElectedValidator[]> {
@@ -29,8 +28,14 @@ async function getCurrentElectedValidators(
 		utils.log(
 			`getting current elected validators: ${new Date()} from ${nodeURL}`
 		);
-		const { stdout } = await execAsync(
-			`NO_SYNCCHECK=1 npx celocli election:current --output json --node ${nodeURL}`
+		const { stdout } = await utils.execAsyncWithRetry(
+			`NO_SYNCCHECK=1 npx celocli election:current --output json --node ${nodeURL}`,
+			{
+				timeout: 60000, // 60 seconds for this command
+				maxRetries: 3,
+				baseDelay: 2000, // 2 seconds base delay
+				maxDelay: 30000, // 30 seconds max delay
+			}
 		);
 		//utils.log(`Raw stdout: ${stdout}`);
 
@@ -61,8 +66,14 @@ async function getCurrentElectedValidators(
 async function getRPCList(nodeURL = NODE_URL): Promise<IRPCInfo[]> {
 	try {
 		utils.log(`getting RPC list: ${new Date()} from ${nodeURL}`);
-		const { stdout } = await execAsync(
-			`NO_SYNCCHECK=1 npx celocli validatorgroup:rpc-urls --output json --node ${nodeURL}`
+		const { stdout } = await utils.execAsyncWithRetry(
+			`NO_SYNCCHECK=1 npx celocli validatorgroup:rpc-urls --output json --node ${nodeURL}`,
+			{
+				timeout: 60000, // 60 seconds for this command
+				maxRetries: 3,
+				baseDelay: 2000, // 2 seconds base delay
+				maxDelay: 30000, // 30 seconds max delay
+			}
 		);
 		//utils.log(`Raw stdout: ${stdout}`);
 
@@ -93,8 +104,14 @@ async function getValidatorGroups(
 ): Promise<IValidatorGroup[]> {
 	try {
 		utils.log(`getting validator groups: ${new Date()} from ${nodeURL}`);
-		const { stdout } = await execAsync(
-			`NO_SYNCCHECK=1 npx celocli validatorgroup:list --output json --node ${nodeURL}`
+		const { stdout } = await utils.execAsyncWithRetry(
+			`NO_SYNCCHECK=1 npx celocli validatorgroup:list --output json --node ${nodeURL}`,
+			{
+				timeout: 60000, // 60 seconds for this command
+				maxRetries: 3,
+				baseDelay: 2000, // 2 seconds base delay
+				maxDelay: 30000, // 30 seconds max delay
+			}
 		);
 		//utils.log(`Raw stdout: ${stdout}`);
 
@@ -124,7 +141,7 @@ async function checkRPCEndpoint(
 	rpcUrl: string,
 	measurement: dbService.RPCMeasurement
 ): Promise<{ up: boolean; blockNumber?: number }> {
-	const t0 = performance.now();
+	let t0 = performance.now();
 	try {
 		utils.log(`checking rpc ${rpcUrl}...`);
 		const response = await getBlockNumberFromRPCEndpoint(rpcUrl);
@@ -135,9 +152,19 @@ async function checkRPCEndpoint(
 			measurement.responseTimeMs = response.responseTime;
 		}
 	} catch (error) {
-		utils.log(`Error checking RPC ${rpcUrl}: ${error}`);
+		utils.log(`Error checking block number ${rpcUrl}: ${error}`);
 	}
-	utils.logTimeElapsed(t0, `checked rpc${rpcUrl}`);
+	utils.logTimeElapsed(t0, `checked block number ${rpcUrl}`);
+
+	t0 = performance.now();
+	measurement.isSyncing = null;
+	try {
+		const response = await getIsSyncingFromRPCEndpoint(rpcUrl);
+		measurement.isSyncing = response?.isSyncing;
+	} catch (error) {
+		utils.log(`Error checking is syncing ${rpcUrl}: ${error}`);
+	}
+	utils.logTimeElapsed(t0, `checked is syncing ${rpcUrl}`);
 	return measurement;
 }
 

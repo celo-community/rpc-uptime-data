@@ -4,6 +4,12 @@ export type BlockNumberResponse = {
 	responseTime?: number;
 };
 
+export type IsSyncingResponse = {
+	statusCode: number;
+	isSyncing?: boolean;
+	responseTime?: number;
+};
+
 // {
 //     "address": "0xe666f512a64a80Cc9b9ee5ad004b8074eEBF11Fb",
 //     "name": "Textile",

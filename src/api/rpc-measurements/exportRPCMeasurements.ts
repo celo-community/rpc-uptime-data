@@ -1,6 +1,5 @@
 import * as dbService from "../../service/database";
 import { ApiRPCMeasurementExport, flattenMeasurement } from "./models/types";
-import _ from "lodash";
 
 export async function exportRPCMeasurements(
 	network: string,

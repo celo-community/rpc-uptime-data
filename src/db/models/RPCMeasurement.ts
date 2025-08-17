@@ -104,6 +104,12 @@ export class RPCMeasurement extends Model {
 	})
 	responseTimeMs: number;
 
+	@Column({
+		type: DataType.BOOLEAN,
+		allowNull: true,
+	})
+	isSyncing: boolean;
+
 	@CreatedAt
 	@Column
 	createdAt: Date;

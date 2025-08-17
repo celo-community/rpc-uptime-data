@@ -1,12 +1,50 @@
 services:
   
+  db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.db-init
+    depends_on:
+      mysql_db:
+        condition: service_healthy
+    networks:
+      - internal
+    environment:
+      - NODE_ENV=production
+      - QUERY_LOGGING=true
+      - DEBUG=true
+      - DB_HOST=mysql_db
+      - DB_NAME=rpc_uptime_data
+      - DB_USER=root
+      - DB_PWD=${DB_PWD}
+    restart: "no"
+
+  db-migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile.db-migrations
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    environment:
+      - NODE_ENV=production
+      - QUERY_LOGGING=true
+      - DEBUG=true
+      - DB_HOST=mysql_db
+      - DB_NAME=rpc_uptime_data
+      - DB_USER=root
+      - DB_PWD=${DB_PWD}
+    restart: "no"
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      mysql_db:
-        condition: service_started
+      db-migrations:
+        condition: service_completed_successfully
       redis:
         condition: service_started
     networks:
@@ -48,6 +86,10 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     command: ["--default-authentication-plugin=mysql_native_password", "--innodb-buffer-pool-size=8G", "--innodb-buffer-pool-instances=16", "--max_allowed_packet=1073741824"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
 
   redis:
     image: redis/redis-stack-server:latest
@@ -65,7 +107,10 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      - mysql_db
+      db-migrations:
+        condition: service_completed_successfully
+      mysql_db:
+        condition: service_healthy
     networks:
       - internal
     deploy:
@@ -93,7 +138,10 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      - mysql_db
+      db-migrations:
+        condition: service_completed_successfully
+      mysql_db:
+        condition: service_healthy
     networks:
       - internal
     deploy:

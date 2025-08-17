@@ -15,6 +15,7 @@ export interface ApiRPCMeasurementExport {
 	blockNumber: number;
 	up: boolean;
 	statusCode: number;
+	isSyncing: boolean;
 }
 
 export interface ApiValidatorMeasurement {
@@ -23,6 +24,7 @@ export interface ApiValidatorMeasurement {
 	blockNumber: number;
 	responseTimeMs: number;
 	statusCode: number;
+	isSyncing: boolean;
 }
 
 export interface ApiValidator {
@@ -56,5 +58,6 @@ export function flattenMeasurement(
 		responseTimeMs: measurement.responseTimeMs,
 		up: measurement.up,
 		statusCode: measurement.statusCode,
+		isSyncing: measurement.isSyncing,
 	};
 }
