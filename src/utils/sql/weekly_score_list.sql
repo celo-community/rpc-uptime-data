@@ -232,7 +232,7 @@ score_change AS (
         ON currentWeek.address = lastWeek.address
     ORDER BY validatorName
 )
-SELECT address, validatorName, rpcUrl, measuredDownOrHighBlockLagPercentageInTotalPeriod as downPercentage, COALESCE(lastWeekScore, 'NOT ELECTED') as lastWeekScore, COALESCE(score, 'NOT ELECTED') as currentWeekScore, scoreChange, , actualMeasurementsInPeriod as currentWeekMeasurementCount 
+SELECT address, validatorName, rpcUrl, measuredDownOrHighBlockLagPercentageInTotalPeriod as downPercentage, COALESCE(lastWeekScore, 'NOT ELECTED') as lastWeekScore, COALESCE(score, 'NOT ELECTED') as currentWeekScore, scoreChange, actualMeasurementsInPeriod as currentWeekMeasurementCount 
 FROM score_change
 WHERE scoreChange != "NO CHANGE" or score = "SLASHED"
 -- SELECT * FROM score_change
