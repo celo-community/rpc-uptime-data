@@ -13,10 +13,18 @@ import {
 	getIsSyncingFromRPCEndpoint,
 } from "./rpc";
 import { updateValidatorNames, updateValidatorGroups } from "./validator";
+import axios from "axios";
 
 const NODE_URL = process.env.NODE_URL;
 const EXTERNAL_NODE_URL = process.env.EXTERNAL_NODE_URL;
 const RPC_TIMER_MS = parseInt(process.env.RPC_TIMER_MS || "300000");
+const CLI_TIMEOUT_MS = parseInt(process.env.CLI_TIMEOUT_MS || "20000");
+const CLI_MAX_RETRIES = parseInt(process.env.CLI_MAX_RETRIES || "3");
+const CLI_BASE_DELAY_MS = parseInt(process.env.CLI_BASE_DELAY_MS || "2000");
+const CLI_MAX_DELAY_MS = parseInt(process.env.CLI_MAX_DELAY_MS || "20000");
+const METADATA_FETCH_TIMEOUT_MS = parseInt(
+	process.env.METADATA_FETCH_TIMEOUT_MS || "5000"
+);
 
 let sequelize: Sequelize;
 let kit: ContractKit;
@@ -31,10 +39,10 @@ async function getCurrentElectedValidators(
 		const { stdout } = await utils.execAsyncWithRetry(
 			`NO_SYNCCHECK=1 npx celocli election:current --output json --node ${nodeURL}`,
 			{
-				timeout: 60000, // 60 seconds for this command
-				maxRetries: 3,
-				baseDelay: 2000, // 2 seconds base delay
-				maxDelay: 30000, // 30 seconds max delay
+				timeout: CLI_TIMEOUT_MS,
+				maxRetries: CLI_MAX_RETRIES,
+				baseDelay: CLI_BASE_DELAY_MS,
+				maxDelay: CLI_MAX_DELAY_MS,
 			}
 		);
 		//utils.log(`Raw stdout: ${stdout}`);
@@ -63,37 +71,234 @@ async function getCurrentElectedValidators(
 	}
 }
 
-async function getRPCList(nodeURL = NODE_URL): Promise<IRPCInfo[]> {
+/**
+ * Fetches metadata URL from a validator account
+ * @param validatorAddress - The validator address to query
+ * @param nodeURL - The node URL to use for the celocli command
+ * @returns The metadata URL or null if not found
+ */
+async function getMetadataURLFromAccount(
+	validatorAddress: string,
+	nodeURL = NODE_URL
+): Promise<string | null> {
 	try {
-		utils.log(`getting RPC list: ${new Date()} from ${nodeURL}`);
 		const { stdout } = await utils.execAsyncWithRetry(
-			`NO_SYNCCHECK=1 npx celocli validatorgroup:rpc-urls --output json --node ${nodeURL}`,
+			`NO_SYNCCHECK=1 npx celocli account:show ${validatorAddress} --node ${nodeURL}`,
 			{
-				timeout: 60000, // 60 seconds for this command
-				maxRetries: 3,
-				baseDelay: 2000, // 2 seconds base delay
-				maxDelay: 30000, // 30 seconds max delay
+				timeout: CLI_TIMEOUT_MS,
+				maxRetries: 1, // Only retry once for metadata fetches
+				baseDelay: CLI_BASE_DELAY_MS,
 			}
 		);
-		//utils.log(`Raw stdout: ${stdout}`);
 
-		// Find the closing bracket of the JSON array because MOTD is included in the output
-		const endBracketIndex = stdout.lastIndexOf("]");
-		if (endBracketIndex === -1) {
-			throw new Error("No closing bracket found in output");
+		const metadataMatch = stdout.match(/metadataURL:\s*(.+)/);
+		const metadataURL = metadataMatch ? metadataMatch[1].trim() : null;
+
+		if (metadataURL && metadataURL !== "null") {
+			return metadataURL;
+		}
+		return null;
+	} catch (error) {
+		utils.log(
+			`Error getting metadata URL for ${validatorAddress}: ${error}`
+		);
+		return null;
+	}
+}
+
+/**
+ * Fetches and parses validator metadata from a URL
+ * @param metadataURL - The URL to fetch metadata from
+ * @returns The parsed metadata object or null if fetch fails
+ */
+async function fetchMetadata(
+	metadataURL: string
+): Promise<{ rpcUrl?: string } | null> {
+	try {
+		utils.log(`Fetching metadata from ${metadataURL}`);
+		const response = await axios.get(metadataURL, {
+			timeout: METADATA_FETCH_TIMEOUT_MS,
+			headers: {
+				"User-Agent": "Rivera-Celo-Indexer/1.0",
+				Accept: "application/json, text/plain, */*",
+			},
+			maxRedirects: 5,
+			validateStatus: (status) => status >= 200 && status < 300,
+			responseType: "json",
+		});
+
+		if (response.data) {
+			utils.log(
+				`Successfully fetched metadata from ${metadataURL}: ${JSON.stringify(
+					response.data
+				).substring(0, 200)}`
+			);
+			return response.data;
+		}
+		return null;
+	} catch (error) {
+		if (axios.isAxiosError(error)) {
+			const statusCode = error.response?.status;
+			const errorDetails = [
+				`Error fetching metadata from ${metadataURL}:`,
+				`Message: ${error.message}`,
+				error.code ? `Code: ${error.code}` : null,
+				statusCode ? `Status: ${statusCode}` : null,
+				error.response?.statusText
+					? `StatusText: ${error.response.statusText}`
+					: null,
+			]
+				.filter(Boolean)
+				.join(" | ");
+			utils.log(errorDetails);
+		} else {
+			utils.log(`Error fetching metadata from ${metadataURL}: ${error}`);
+		}
+		return null;
+	}
+}
+
+/**
+ * Gets the current RPC URL from the database for a validator
+ * @param network - The network to query
+ * @param validatorAddress - The validator address
+ * @returns The RPC URL or null if not found
+ */
+async function getCurrentRPCFromDatabase(
+	network: dbService.Network,
+	validatorAddress: string
+): Promise<string | null> {
+	try {
+		const validator = await dbService.Validator.findOne({
+			where: {
+				address: validatorAddress,
+				networkId: network.id,
+			},
+		});
+
+		if (!validator) {
+			return null;
 		}
 
-		// Extract just the JSON part (from beginning to the closing bracket)
-		const jsonStr = stdout.substring(0, endBracketIndex + 1);
-		//utils.log(`Extracted JSON: ${jsonStr}`);
+		const latestValidatorRPC = await dbService.ValidatorRPC.findOne({
+			where: {
+				validatorId: validator.id,
+				networkId: network.id,
+			},
+			order: [["rpcMeasurementHeaderId", "DESC"]],
+			limit: 1,
+		});
 
-		const parsed: IRPCInfo[] = JSON.parse(jsonStr);
-		utils.log(`Parsed ${parsed.length} RPC entries`);
-		return parsed;
+		if (latestValidatorRPC && latestValidatorRPC.rpcUrl !== "None") {
+			return latestValidatorRPC.rpcUrl;
+		}
+		return null;
+	} catch (error) {
+		utils.log(
+			`Error getting RPC from database for ${validatorAddress}: ${error}`
+		);
+		return null;
+	}
+}
+
+async function getRPCList(
+	network: dbService.Network,
+	nodeURL = NODE_URL
+): Promise<IRPCInfo[]> {
+	try {
+		utils.log(`getting RPC list: ${new Date()} from ${nodeURL}`);
+
+		// Get all validator groups to include in the response
+		const validatorGroups = await getValidatorGroups(nodeURL);
+		const validatorGroupMap = new Map(
+			validatorGroups.map((vg) => [vg.address, vg.name])
+		);
+
+		// Get all elected validators
+		const validators = await getCurrentElectedValidators(nodeURL);
+		utils.log(
+			`Fetching RPC URLs for ${validators.length} validators using metadata fetch...`
+		);
+
+		const rpcList: IRPCInfo[] = [];
+
+		// Process validators in parallel with some concurrency control
+		const processBatch = async (
+			batch: IElectedValidator[]
+		): Promise<void> => {
+			const promises = batch.map(async (validator) => {
+				let rpcUrl: string | null = null;
+
+				// Step 1: Try to get metadata URL from account:show
+				const metadataURL = await getMetadataURLFromAccount(
+					validator.address,
+					nodeURL
+				);
+
+				if (metadataURL) {
+					// Step 2: Try to fetch metadata with timeout
+					const metadata = await fetchMetadata(metadataURL);
+					if (metadata && metadata.rpcUrl) {
+						rpcUrl = metadata.rpcUrl;
+						utils.log(
+							`Successfully fetched RPC URL for ${validator.name} (${validator.address}): ${rpcUrl}`
+						);
+					} else {
+						utils.log(
+							`Metadata fetch failed or no rpcUrl found for ${validator.name} (${validator.address}), checking database...`
+						);
+					}
+				} else {
+					utils.log(
+						`No metadata URL found for ${validator.name} (${validator.address}), checking database...`
+					);
+				}
+
+				// Step 3: If metadata fetch failed, try database fallback
+				if (!rpcUrl) {
+					rpcUrl = await getCurrentRPCFromDatabase(
+						network,
+						validator.address
+					);
+					if (rpcUrl) {
+						utils.log(
+							`Using cached RPC URL from database for ${validator.name} (${validator.address}): ${rpcUrl}`
+						);
+					} else {
+						utils.log(
+							`No RPC URL available for ${validator.name} (${validator.address})`
+						);
+					}
+				}
+
+				// Only add to list if we found an RPC URL
+				if (rpcUrl) {
+					rpcList.push({
+						validatorAddress: validator.address,
+						validatorGroupName:
+							validatorGroupMap.get(validator.affiliation) ||
+							"Unknown",
+						rpcUrl: rpcUrl,
+					});
+				}
+			});
+
+			await Promise.all(promises);
+		};
+
+		// Process in batches of 10 to avoid overwhelming the system
+		const batchSize = 10;
+		for (let i = 0; i < validators.length; i += batchSize) {
+			const batch = validators.slice(i, i + batchSize);
+			await processBatch(batch);
+		}
+
+		utils.log(`Collected ${rpcList.length} RPC entries`);
+		return rpcList;
 	} catch (error) {
 		utils.log(`Error getting RPC list: ${error} from ${nodeURL}`);
 		if (nodeURL === NODE_URL) {
-			return getRPCList(EXTERNAL_NODE_URL);
+			return getRPCList(network, EXTERNAL_NODE_URL);
 		}
 		throw error;
 	}
@@ -107,10 +312,10 @@ async function getValidatorGroups(
 		const { stdout } = await utils.execAsyncWithRetry(
 			`NO_SYNCCHECK=1 npx celocli validatorgroup:list --output json --node ${nodeURL}`,
 			{
-				timeout: 60000, // 60 seconds for this command
-				maxRetries: 3,
-				baseDelay: 2000, // 2 seconds base delay
-				maxDelay: 30000, // 30 seconds max delay
+				timeout: CLI_TIMEOUT_MS,
+				maxRetries: CLI_MAX_RETRIES,
+				baseDelay: CLI_BASE_DELAY_MS,
+				maxDelay: CLI_MAX_DELAY_MS,
 			}
 		);
 		//utils.log(`Raw stdout: ${stdout}`);
@@ -468,7 +673,7 @@ async function runRPCIndexer(): Promise<void> {
 		// eslint-disable-next-line no-constant-condition
 		while (true) {
 			await processValidatorsAndGroups(network, kit);
-			const rpcList: IRPCInfo[] = await getRPCList(NODE_URL);
+			const rpcList: IRPCInfo[] = await getRPCList(network, NODE_URL);
 			let matchingValidators: dbService.Validator[] =
 				await dbService.getValidatorByAddressList(
 					network.networkName,

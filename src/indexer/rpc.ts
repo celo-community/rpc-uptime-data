@@ -8,6 +8,8 @@ import { BlockNumberResponse, IsSyncingResponse } from "./types";
 //   --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
 //   https://YOUR_RPC_ENDPOINT
 
+const JSON_RPC_TIMEOUT_MS = parseInt(process.env.JSON_RPC_TIMEOUT_MS || "5000");
+
 export async function getBlockNumberFromRPCEndpoint(
 	url: string
 ): Promise<BlockNumberResponse> {
@@ -22,7 +24,10 @@ export async function getBlockNumberFromRPCEndpoint(
 
 	try {
 		const t0 = performance.now();
-		const response = await axios.post(url, data, { headers });
+		const response = await axios.post(url, data, {
+			headers,
+			timeout: JSON_RPC_TIMEOUT_MS,
+		});
 		const t1 = performance.now();
 		const statusCode = response.status;
 		const blockNumber = parseInt(response.data.result, 16);
@@ -50,7 +55,10 @@ export async function getIsSyncingFromRPCEndpoint(
 
 	try {
 		const t0 = performance.now();
-		const response = await axios.post(url, data, { headers });
+		const response = await axios.post(url, data, {
+			headers,
+			timeout: JSON_RPC_TIMEOUT_MS,
+		});
 		const t1 = performance.now();
 		const statusCode = response.status;
 		const isSyncing = Boolean(response.data.result);
