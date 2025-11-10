@@ -137,23 +137,21 @@ async function fetchMetadata(
 		}
 		return null;
 	} catch (error) {
+		let errorMsg = `Error fetching metadata from ${metadataURL}: `;
+
 		if (axios.isAxiosError(error)) {
-			const statusCode = error.response?.status;
-			const errorDetails = [
-				`Error fetching metadata from ${metadataURL}:`,
-				`Message: ${error.message}`,
-				error.code ? `Code: ${error.code}` : null,
-				statusCode ? `Status: ${statusCode}` : null,
-				error.response?.statusText
-					? `StatusText: ${error.response.statusText}`
-					: null,
-			]
-				.filter(Boolean)
-				.join(" | ");
-			utils.log(errorDetails);
+			errorMsg += `${error.message}`;
+			if (error.code) errorMsg += ` | Code: ${error.code}`;
+			if (error.response?.status) errorMsg += ` | HTTP Status: ${error.response.status}`;
+			if (error.response?.statusText) errorMsg += ` | Status Text: ${error.response.statusText}`;
+			if (error.response?.data) errorMsg += ` | Response: ${JSON.stringify(error.response.data).substring(0, 200)}`;
+		} else if (error instanceof Error) {
+			errorMsg += `${error.message} | Stack: ${error.stack?.substring(0, 200)}`;
 		} else {
-			utils.log(`Error fetching metadata from ${metadataURL}: ${error}`);
+			errorMsg += `${JSON.stringify(error)}`;
 		}
+
+		utils.log(errorMsg);
 		return null;
 	}
 }
@@ -248,9 +246,13 @@ async function getRPCList(
 								`Metadata has empty rpcUrl for ${validator.name} (${validator.address}), checking database...`
 							);
 						}
+					} else if (metadata && !metadata.rpcUrl) {
+						utils.log(
+							`Metadata fetched but has no rpcUrl field for ${validator.name} (${validator.address}). Metadata: ${JSON.stringify(metadata)}`
+						);
 					} else {
 						utils.log(
-							`Metadata fetch failed or no rpcUrl found for ${validator.name} (${validator.address}), checking database...`
+							`Metadata fetch failed for ${validator.name} (${validator.address}) at ${metadataURL}, checking database...`
 						);
 					}
 				} else {
