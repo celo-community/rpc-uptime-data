@@ -133,6 +133,17 @@ async function fetchMetadata(
 					response.data
 				).substring(0, 200)}`
 			);
+
+			// Look for RPC_URL in claims array
+			if (Array.isArray(response.data.claims)) {
+				const rpcClaim = response.data.claims.find(
+					(claim: any) => claim.type === "RPC_URL"
+				);
+				if (rpcClaim?.rpcUrl) {
+					return { rpcUrl: rpcClaim.rpcUrl };
+				}
+			}
+
 			return response.data;
 		}
 		return null;
