@@ -585,9 +585,10 @@ async function processValidatorsAndGroups(
 			utils.log(
 				`Validator group ${cliValidatorGroup.name} ${cliValidatorGroup.address} already exists`
 			);
-			// Normalize names: treat null, undefined, and empty string as equivalent
-			const cliGroupName = cliValidatorGroup.name?.trim() || null;
-			const dbGroupName = dbValidatorGroup.name?.trim() || null;
+			// Normalize names: treat null/empty as equivalent to validator group address
+			// When name is not set, it defaults to the validator group address
+			const cliGroupName = cliValidatorGroup.name?.trim() || cliValidatorGroup.address;
+			const dbGroupName = dbValidatorGroup.name?.trim() || cliValidatorGroup.address;
 			if (cliGroupName !== dbGroupName) {
 				utils.log(
 					`Updating validator group ${cliValidatorGroup.address} name from ${dbValidatorGroup.name} to ${cliValidatorGroup.name}`
@@ -629,9 +630,10 @@ async function processValidatorsAndGroups(
 					dbValidator.id,
 					blockNumber
 				);
-			// Normalize names: treat null, undefined, and empty string as equivalent
-			const cliName = cliValidator.name?.trim() || null;
-			const dbName = validatorName?.validatorName?.trim() || null;
+			// Normalize names: treat null/empty as equivalent to validator address
+			// When name is not set, it defaults to the validator address
+			const cliName = cliValidator.name?.trim() || cliValidator.address;
+			const dbName = validatorName?.validatorName?.trim() || cliValidator.address;
 			if (!validatorName || cliName !== dbName) {
 				utils.log(
 					`Validator ${cliValidator.name} ${cliValidator.address} has a different name in the database: ${validatorName?.validatorName}, we will perform bulk name updates`
