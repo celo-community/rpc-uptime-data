@@ -23,7 +23,7 @@ const CLI_MAX_RETRIES = parseInt(process.env.CLI_MAX_RETRIES || "3");
 const CLI_BASE_DELAY_MS = parseInt(process.env.CLI_BASE_DELAY_MS || "2000");
 const CLI_MAX_DELAY_MS = parseInt(process.env.CLI_MAX_DELAY_MS || "20000");
 const METADATA_FETCH_TIMEOUT_MS = parseInt(
-	process.env.METADATA_FETCH_TIMEOUT_MS || "5000"
+	process.env.METADATA_FETCH_TIMEOUT_MS || "15000"
 );
 
 let sequelize: Sequelize;
@@ -189,10 +189,7 @@ async function getCurrentRPCFromDatabase(
 			limit: 1,
 		});
 
-		if (latestValidatorRPC && latestValidatorRPC.rpcUrl !== "None") {
-			return latestValidatorRPC.rpcUrl;
-		}
-		return null;
+		return latestValidatorRPC?.rpcUrl || null;
 	} catch (error) {
 		utils.log(
 			`Error getting RPC from database for ${validatorAddress}: ${error}`
@@ -239,10 +236,18 @@ async function getRPCList(
 					// Step 2: Try to fetch metadata with timeout
 					const metadata = await fetchMetadata(metadataURL);
 					if (metadata && metadata.rpcUrl) {
-						rpcUrl = metadata.rpcUrl;
-						utils.log(
-							`Successfully fetched RPC URL for ${validator.name} (${validator.address}): ${rpcUrl}`
-						);
+						// Trim and treat empty/whitespace strings as null
+						const trimmedRpcUrl = metadata.rpcUrl.trim();
+						if (trimmedRpcUrl) {
+							rpcUrl = trimmedRpcUrl;
+							utils.log(
+								`Successfully fetched RPC URL for ${validator.name} (${validator.address}): ${rpcUrl}`
+							);
+						} else {
+							utils.log(
+								`Metadata has empty rpcUrl for ${validator.name} (${validator.address}), checking database...`
+							);
+						}
 					} else {
 						utils.log(
 							`Metadata fetch failed or no rpcUrl found for ${validator.name} (${validator.address}), checking database...`
@@ -385,6 +390,11 @@ async function updateValidatorRPC(
 	}
 	utils.log(`Updating ${validators?.length} validators RPCs...`);
 	for (const validator of validators) {
+		// Only track RPC URLs when we have a non-null value
+		if (!validator.rpcUrl) {
+			continue;
+		}
+
 		const latestValidatorRPC = await dbService.ValidatorRPC.findOne({
 			where: {
 				validatorId: validator.id,
@@ -393,8 +403,10 @@ async function updateValidatorRPC(
 			order: [["rpcMeasurementHeaderId", "DESC"]],
 			limit: 1,
 		});
+
 		if (latestValidatorRPC) {
-			if (latestValidatorRPC.rpcUrl === (validator.rpcUrl || "None")) {
+			// Update only if the RPC URL has actually changed
+			if (latestValidatorRPC.rpcUrl === validator.rpcUrl) {
 				utils.log(
 					`Validator ${validator.id} already has a RPC measurement header id ${latestValidatorRPC.rpcMeasurementHeaderId} and rpcUrl ${validator.rpcUrl}`
 				);
@@ -408,7 +420,7 @@ async function updateValidatorRPC(
 						validatorId: validator.id,
 						networkId: network.id,
 						rpcMeasurementHeaderId: measurementHeaderId,
-						rpcUrl: validator.rpcUrl || "None",
+						rpcUrl: validator.rpcUrl,
 					},
 					{ transaction: transaction }
 				);
@@ -422,7 +434,7 @@ async function updateValidatorRPC(
 					validatorId: validator.id,
 					networkId: network.id,
 					rpcMeasurementHeaderId: measurementHeaderId,
-					rpcUrl: validator.rpcUrl || "None",
+					rpcUrl: validator.rpcUrl,
 				},
 				{ transaction: transaction }
 			);
@@ -571,7 +583,10 @@ async function processValidatorsAndGroups(
 			utils.log(
 				`Validator group ${cliValidatorGroup.name} ${cliValidatorGroup.address} already exists`
 			);
-			if (cliValidatorGroup.name !== dbValidatorGroup.name) {
+			// Normalize names: treat null, undefined, and empty string as equivalent
+			const cliGroupName = cliValidatorGroup.name?.trim() || null;
+			const dbGroupName = dbValidatorGroup.name?.trim() || null;
+			if (cliGroupName !== dbGroupName) {
 				utils.log(
 					`Updating validator group ${cliValidatorGroup.address} name from ${dbValidatorGroup.name} to ${cliValidatorGroup.name}`
 				);
@@ -612,10 +627,10 @@ async function processValidatorsAndGroups(
 					dbValidator.id,
 					blockNumber
 				);
-			if (
-				!validatorName ||
-				cliValidator.name !== validatorName.validatorName
-			) {
+			// Normalize names: treat null, undefined, and empty string as equivalent
+			const cliName = cliValidator.name?.trim() || null;
+			const dbName = validatorName?.validatorName?.trim() || null;
+			if (!validatorName || cliName !== dbName) {
 				utils.log(
 					`Validator ${cliValidator.name} ${cliValidator.address} has a different name in the database: ${validatorName?.validatorName}, we will perform bulk name updates`
 				);
@@ -673,21 +688,7 @@ async function runRPCIndexer(): Promise<void> {
 		// eslint-disable-next-line no-constant-condition
 		while (true) {
 			await processValidatorsAndGroups(network, kit);
-			const rpcList: IRPCInfo[] = await getRPCList(network, NODE_URL);
-			let matchingValidators: dbService.Validator[] =
-				await dbService.getValidatorByAddressList(
-					network.networkName,
-					rpcList.map((r) => r.validatorAddress)
-				);
-			for (const validator of matchingValidators) {
-				const rpcInfo = rpcList.find(
-					(r) => r.validatorAddress === validator.address
-				);
-				if (rpcInfo) {
-					validator.rpcUrl = rpcInfo.rpcUrl;
-					await validator.save();
-				}
-			}
+			// Get all elected validators first
 			const electedValidators: IElectedValidator[] =
 				await getCurrentElectedValidators(NODE_URL);
 			const electedValidatorsAddresses: string[] = electedValidators.map(
@@ -698,6 +699,24 @@ async function runRPCIndexer(): Promise<void> {
 					network.networkName,
 					electedValidatorsAddresses
 				);
+
+			// Get RPC list (may not include all validators if metadata fetch fails)
+			const rpcList: IRPCInfo[] = await getRPCList(network, NODE_URL);
+
+			// Update RPC URLs for ALL elected validators, not just those in rpcList
+			// This ensures validators can transition from NULL to non-NULL RPC URLs
+			for (const validator of dbElectedValidators) {
+				const rpcInfo = rpcList.find(
+					(r) => r.validatorAddress === validator.address
+				);
+				if (rpcInfo && rpcInfo.rpcUrl) {
+					const trimmedUrl = rpcInfo.rpcUrl.trim();
+					if (trimmedUrl && trimmedUrl !== validator.rpcUrl) {
+						validator.rpcUrl = trimmedUrl;
+						await validator.save();
+					}
+				}
+			}
 			const measurementId = uuidv4();
 			await monitorRPCsAndUpdate(
 				network,
