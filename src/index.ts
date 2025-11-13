@@ -56,9 +56,6 @@ console.log("CORS options", options);
 
 const app: Express = express();
 
-// Enable compression middleware
-app.use(compression());
-
 // Parse JSON bodies BEFORE any middleware that accesses req.body
 app.use(express.json());
 app.use(cors(options));
