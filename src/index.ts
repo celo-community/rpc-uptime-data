@@ -56,6 +56,14 @@ console.log("CORS options", options);
 
 const app: Express = express();
 
+// Enable compression middleware
+app.use(compression());
+
+// Parse JSON bodies BEFORE any middleware that accesses req.body
+app.use(express.json());
+app.use(cors(options));
+app.disable("x-powered-by");
+
 // Async error handler
 //
 
@@ -88,11 +96,7 @@ app.use((req, res, next) => {
 	next();
 });
 
-app.use(cors(options));
-app.use(express.json());
-app.disable("x-powered-by");
-
-export const routes = express.Router();
+export const routes: express.Router = express.Router();
 app.use("/", routes);
 
 const port = process.env.PORT || 3006;
