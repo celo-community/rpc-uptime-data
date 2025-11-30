@@ -10,12 +10,9 @@ export const up: Migration = async (params) => {
 				type: DataTypes.BOOLEAN(),
 				allowNull: true,
 			});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		// MySQL error code 1060: Duplicate column name
-		if (
-			error?.original?.code === "ER_DUP_FIELDNAME" ||
-			error?.original?.errno === 1060
-		) {
+		if ((error as any)?.original?.code === "ER_DUP_FIELDNAME") {
 			// Column already exists, safely pass
 			return;
 		}
